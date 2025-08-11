@@ -97,7 +97,7 @@ export default function Page() {
     // atuais
     const [{ data: rev }, { data: sales }, { data: churn }, { data: goal }] = await Promise.all([
       supabase.from("v_monthly_revenue").select("*").eq("year", y).eq("month", m).maybeSingle(),
-      supabase.from("v_monthly_sales").select("*").eq("year", y).eq("month", m).maybeSingle(),
+supabase.from("v_monthly_sales_final").select("*").eq("year", y).eq("month", m).maybeSingle(),
       supabase.from("v_monthly_churn_count").select("*").eq("year", y).eq("month", m).maybeSingle(),
       supabase.from("goals").select("*").eq("scope","monthly").eq("year", y).eq("month", m).maybeSingle(),
     ]);
@@ -105,12 +105,13 @@ export default function Page() {
     // anteriores
     const [{ data: prevRev }, { data: prevSales }, { data: prevChurn }] = await Promise.all([
       supabase.from("v_monthly_revenue").select("*").eq("year", pY).eq("month", pM).maybeSingle(),
-      supabase.from("v_monthly_sales").select("*").eq("year", pY).eq("month", pM).maybeSingle(),
+      supabase.from("v_monthly_sales_final").select("*").eq("year", pY).eq("month", pM).maybeSingle(),
+
       supabase.from("v_monthly_churn_count").select("*").eq("year", pY).eq("month", pM).maybeSingle(),
     ]);
 
     const curRev = Number(rev?.revenue || 0);
-    const curSales = Number(sales?.sales_count || 0);
+    const curSales = Number(sales?.sales_value || 0);
     const curChurn = Number(churn?.churn_count || 0);
     const metaMensal = Number(goal?.amount || 0);
 
@@ -118,7 +119,7 @@ export default function Page() {
 
     setKpis([
       { label: "Faturamento Mensal", value: curRev,   deltaPct: delta(curRev,   Number(prevRev?.revenue || 0)) },
-      { label: "Vendas Mensais",     value: curSales, deltaPct: delta(curSales, Number(prevSales?.sales_count || 0)) },
+      { label: "Vendas Mensais", value: curSales, deltaPct: delta(curSales, Number(prevSales?.sales_value || 0)) },
       { label: "Meta Mensal",        value: metaMensal, deltaPct: (metaMensal ? (curRev / metaMensal) * 100 - 100 : 0), suffix: "% atingido", help: "% acima/abaixo da meta" },
       { label: "Churn Mensal",       value: curChurn, deltaPct: delta(curChurn, Number(prevChurn?.churn_count || 0)), suffix: "%" },
     ]);
@@ -270,14 +271,12 @@ export default function Page() {
 function KpiCard({ kpi, loading }: { kpi: Kpi; loading: boolean }) {
   const positive = (kpi.deltaPct ?? 0) >= 0;
   const TrendIcon = positive ? TrendingUp : TrendingDown;
-  const valueFmt =
-    kpi.suffix?.includes("%")
-      ? `${kpi.value.toFixed(1)}%`
-      : isNaN(kpi.value)
-      ? String(kpi.value)
-      : kpi.label.includes("Vendas")
-      ? Math.round(kpi.value).toString()
-      : brl(kpi.value);
+ const valueFmt =
+  kpi.suffix?.includes("%")
+    ? `${kpi.value.toFixed(1)}%`
+    : isNaN(kpi.value)
+    ? String(kpi.value)
+    : brl(kpi.value); // Vendas agora também em R$
 
   return (
     <Card className={`${CARD_BG}`}>

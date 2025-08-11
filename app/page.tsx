@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
+import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, TrendingDown, TrendingUp, RefreshCw } from "lucide-react";
 import {
@@ -83,38 +84,49 @@ export default function Page() {
 
   // simula busca ao trocar mês/ano
   useEffect(() => {
+  (async () => {
     setLoading(true);
-    const t = setTimeout(() => {
-      const mIdx = filters.month - 1;
-      const monthRow = sampleMonthly[mIdx];
-      const prevRow = sampleMonthly[Math.max(0, mIdx - 1)];
+    const y = filters.year;
+    const m = filters.month;
 
-      const faturamentoDelta =
-        ((monthRow.faturamento - prevRow.faturamento) / prevRow.faturamento) * 100;
-      const vendasDelta =
-        ((monthRow.vendas - prevRow.vendas) / Math.max(1, prevRow.vendas)) * 100;
-      const churnDelta =
-        ((monthRow.churn - prevRow.churn) / Math.max(0.01, prevRow.churn)) * 100;
+    // mês anterior (pra calcular as setinhas)
+    const prevDate = new Date(y, m - 1, 1);
+    const pY = prevDate.getMonth() === 0 ? y - 1 : y;
+    const pM = prevDate.getMonth() === 0 ? 12 : m - 1;
 
-      const metaMensal = 180000; // depois buscamos em goals (Supabase)
-      const metaPct = (monthRow.faturamento / metaMensal) * 100;
+    // atuais
+    const [{ data: rev }, { data: sales }, { data: churn }, { data: goal }] = await Promise.all([
+      supabase.from("v_monthly_revenue").select("*").eq("year", y).eq("month", m).maybeSingle(),
+      supabase.from("v_monthly_sales").select("*").eq("year", y).eq("month", m).maybeSingle(),
+      supabase.from("v_monthly_churn_count").select("*").eq("year", y).eq("month", m).maybeSingle(),
+      supabase.from("goals").select("*").eq("scope","monthly").eq("year", y).eq("month", m).maybeSingle(),
+    ]);
 
-      setKpis([
-        { label: "Faturamento Mensal", value: monthRow.faturamento, deltaPct: faturamentoDelta },
-        { label: "Vendas Mensais", value: monthRow.vendas, deltaPct: vendasDelta },
-        {
-          label: "Meta Mensal",
-          value: metaMensal,
-          deltaPct: metaPct - 100,
-          suffix: "% atingido",
-          help: "% acima/abaixo da meta",
-        },
-        { label: "Churn Mensal", value: monthRow.churn, deltaPct: churnDelta, suffix: "%" },
-      ]);
-      setLoading(false);
-    }, 300);
-    return () => clearTimeout(t);
-  }, [filters]);
+    // anteriores
+    const [{ data: prevRev }, { data: prevSales }, { data: prevChurn }] = await Promise.all([
+      supabase.from("v_monthly_revenue").select("*").eq("year", pY).eq("month", pM).maybeSingle(),
+      supabase.from("v_monthly_sales").select("*").eq("year", pY).eq("month", pM).maybeSingle(),
+      supabase.from("v_monthly_churn_count").select("*").eq("year", pY).eq("month", pM).maybeSingle(),
+    ]);
+
+    const curRev = Number(rev?.revenue || 0);
+    const curSales = Number(sales?.sales_count || 0);
+    const curChurn = Number(churn?.churn_count || 0);
+    const metaMensal = Number(goal?.amount || 0);
+
+    const delta = (c: number, p: number) => (p ? ((c - p) / p) * 100 : 0);
+
+    setKpis([
+      { label: "Faturamento Mensal", value: curRev,   deltaPct: delta(curRev,   Number(prevRev?.revenue || 0)) },
+      { label: "Vendas Mensais",     value: curSales, deltaPct: delta(curSales, Number(prevSales?.sales_count || 0)) },
+      { label: "Meta Mensal",        value: metaMensal, deltaPct: (metaMensal ? (curRev / metaMensal) * 100 - 100 : 0), suffix: "% atingido", help: "% acima/abaixo da meta" },
+      { label: "Churn Mensal",       value: curChurn, deltaPct: delta(curChurn, Number(prevChurn?.churn_count || 0)), suffix: "%" },
+    ]);
+
+    setLoading(false);
+  })();
+}, [filters]);
+
 
   const monthName = useMemo(() => months[filters.month - 1], [filters.month]);
 
